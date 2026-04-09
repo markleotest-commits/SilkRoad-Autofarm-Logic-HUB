@@ -1,0 +1,402 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Force copy the link 5 times
+task.spawn(function()
+    local keyLink = "https://direct-link.net/4950436/XXlDin7NMLcg"
+    task.wait(1) 
+    for i = 1, 5 do
+        setclipboard(keyLink)
+        task.wait(0.2)
+    end
+end)
+
+-- 1. INITIALIZE WINDOW
+local Window = Rayfield:CreateWindow({
+    Name = "Logic Hub",
+    LoadingTitle = "Logic Hub Systems",
+    LoadingSubtitle = "Authentication Required",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = true, 
+    KeySettings = {
+        Title = "Logic Hub | Key System",
+        Subtitle = "Remote Verification",
+        Note = "Link has been auto-copied 5 times!",
+        FileName = "LogicHubKey_v4", 
+        SaveKey = true, 
+        GrabKeyFromSite = true,
+        Key = {"https://raw.githubusercontent.com/markleotest-commits/SilkRoad-Autofarm-Logic-HUB/refs/heads/main/test"},
+        Actions = {
+            [1] = {
+                Text = "Get Key Link (Manual Copy)",
+                Callback = function()
+                    setclipboard("https://direct-link.net/4950436/XXlDin7NMLcg")
+                    Rayfield:Notify({Title = "Logic Hub", Content = "Link copied to clipboard!", Duration = 5})
+                end
+            }
+        }
+    }
+})
+
+-- 2. SETUP DATA & VARIABLES
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+local isTweening = false
+local currentTween = nil 
+local tweenSpeed = 220 
+local tweenWalkSpeed = 150 
+local tempSpeedInput = 220 
+local safetyPlatform = nil
+local tweenWalkActive = false
+local autoTradeActive = false
+
+local Remotes = {
+    Open = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("OpenTradeMenu"),
+    Purchase = game:GetService("ReplicatedStorage"):WaitForChild("GameFunctions"):WaitForChild("PurchaseGoods"),
+    RequestValue = game:GetService("ReplicatedStorage"):WaitForChild("GameFunctions"):WaitForChild("RequestCargoValue"),
+    Sell = game:GetService("ReplicatedStorage"):WaitForChild("GameFunctions"):WaitForChild("SellGoods"),
+    EnterDialogue = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("EnterDialogue"),
+    DisplayList = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("DisplayRightList"),
+    GetGoods = game:GetService("ReplicatedStorage"):WaitForChild("GameFunctions"):WaitForChild("GetPlayerGoods"),
+    OpenTrade = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("OpenTradeMenu") 
+}
+
+local Merchants = {
+    TyreAgri = { NPC = workspace:WaitForChild("NPCs"):WaitForChild("Tyre"):WaitForChild("TyreTrader_Agriculture"), Coords = Vector3.new(105.3957, -43.0752, -1740.8431) },
+    DamascusAgri = { NPC = workspace:WaitForChild("NPCs"):WaitForChild("Damascus"):WaitForChild("DamascusTrader_Agriculture"), Coords = Vector3.new(708.5681, -55.0752, 2404.4973) },
+    DamascusBlacksmith = { NPC = workspace:WaitForChild("NPCs"):WaitForChild("Damascus"):WaitForChild("DamascusTrader_Blacksmith"), Coords = Vector3.new(745.9843, -55.0752, 2405.1892) },
+    TyreMetal = { NPC = workspace:WaitForChild("NPCs"):WaitForChild("Tyre"):FindFirstChild("TyreTrader_Metal"), Coords = Vector3.new(131.8252, -43.0752, -1777.9169) }
+}
+
+local MarketWaypoints = {
+    {Name = "Ecbatana Market", Coords = Vector3.new(4220.17, 89.42, 11389.93)},
+    {Name = "Ctesiphon Market", Coords = Vector3.new(1949.22, -55.07, 9680.25)},
+    {Name = "Damascus Market", Coords = Vector3.new(737.49, -55.07, 2405.71)},
+    {Name = "Palmyra Market", Coords = Vector3.new(4550.27, -55.07, 6197.06)},
+    {Name = "Tyre Market", Coords = Vector3.new(120.48, -43.07, -1769.26)},
+}
+
+local ResourceWaypoints = {
+    ["Farms and Mines"] = {
+        {Section = "Ecbatana Region"},
+        {Name = "Ecbatana Barley Farm", Coords = Vector3.new(3614.14, 52.92, 11124.09)},
+        {Name = "Ecbatana Copper Mine", Coords = Vector3.new(3787.94, -52.07, 10414.47)},
+        {Name = "Ecbatana Cotton Farm", Coords = Vector3.new(3254.77, -52.07, 10291.70)},
+        {Section = "Palmyra Region"},
+        {Name = "Palmyra Cotton Farm", Coords = Vector3.new(4208.72, -55.07, 8153.50)},
+        {Name = "Wheat Farm", Coords = Vector3.new(3054.45, -28.18, 4642.40)},
+        {Section = "Ctesiphon Region"},
+        {Name = "Ctesiphon Mill", Coords = Vector3.new(2198.93, -54.07, 10147.70)},
+        {Section = "Damascus Region"},
+        {Name = "Olive Tree Farm", Coords = Vector3.new(-239.04, -5.50, -16.57)},
+        {Name = "Damascus Mining Cave", Coords = Vector3.new(35.89, -40.63, 811.03)},
+    },
+    ["Other Locations"] = {
+        {Section = "Churches & Synagogues"},
+        {Name = "Tyre Church", Coords = Vector3.new(-516.25, -15.07, -1677.62)},
+        {Name = "Damascus Church", Coords = Vector3.new(848.27, -54.07, 2057.82)},
+        {Name = "Ecbatana Church", Coords = Vector3.new(4272.28, 89.42, 11522.40)},
+        {Name = "Ctesiphon Church", Coords = Vector3.new(1996.65, -54.07, 9988.21)},
+        {Name = "Ecbatana Synagogue", Coords = Vector3.new(4084.61, 89.60, 11433.46)},
+    }
+}
+
+-- 3. CORE FUNCTIONS
+local function ManagePlatform(state)
+    local char = LP.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if state == true and root then
+        if not safetyPlatform then
+            safetyPlatform = Instance.new("Part")
+            safetyPlatform.Size = Vector3.new(10, 1, 10)
+            safetyPlatform.Transparency = 1 
+            safetyPlatform.Anchored = true
+            safetyPlatform.Parent = workspace
+            safetyPlatform.Name = "TweenSafetyFloor"
+        end
+    else
+        if safetyPlatform then safetyPlatform:Destroy() safetyPlatform = nil end
+    end
+end
+
+local function TweenTo(targetPos)
+    local char = LP.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root or isTweening then return end 
+    isTweening = true 
+    ManagePlatform(true) 
+    
+    local startPos = root.Position
+    local dropY = startPos.Y - 100 
+    local dropPos = CFrame.new(startPos.X, dropY, startPos.Z)
+    local underTargetPos = CFrame.new(targetPos.X, dropY, targetPos.Z)
+    local finalPos = CFrame.new(targetPos)
+
+    local function PlaySegment(target, currentSpeed)
+        if not isTweening or not LP.Character or not LP.Character:FindFirstChild("HumanoidRootPart") then return end
+        local rootPart = LP.Character.HumanoidRootPart
+        local distance = (rootPart.Position - target.Position).Magnitude
+        local duration = distance / currentSpeed
+        currentTween = TweenService:Create(rootPart, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = target})
+        
+        local loop = RunService.Heartbeat:Connect(function()
+            if isTweening and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+                LP.Character.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+                if safetyPlatform then safetyPlatform.CFrame = LP.Character.HumanoidRootPart.CFrame * CFrame.new(0, -3.5, 0) end
+            end
+        end)
+        
+        currentTween:Play()
+        currentTween.Completed:Wait()
+        loop:Disconnect()
+        task.wait(0.1)
+    end
+
+    PlaySegment(dropPos, 75) 
+    PlaySegment(underTargetPos, tweenSpeed) 
+    PlaySegment(finalPos, 75) 
+    isTweening = false 
+    ManagePlatform(false) 
+end
+
+-- 4. CREATE TABS
+local MainTab = Window:CreateTab("Main", 4483362458)
+local MarketTab = Window:CreateTab("City Markets", 4483362458) -- Dedicated Tab
+local TPTab = Window:CreateTab("Resource TPs", 4483362458)
+
+-- 5. MAIN TAB
+MainTab:CreateSection("GOOD FOR NEW PLAYERS!")
+MainTab:CreateButton({
+    Name = "AUTOFARM | DRIED FISH [$90]",
+    Callback = function()
+        if autoTradeActive then return end
+        autoTradeActive = true
+        task.spawn(function()
+            while autoTradeActive do
+                if not LP.Character or not LP.Character:FindFirstChild("HumanoidRootPart") then task.wait(1) continue end
+                TweenTo(Merchants.TyreAgri.Coords)
+                if autoTradeActive and LP.Character:FindFirstChild("HumanoidRootPart") then
+                    LP.Character.HumanoidRootPart.CFrame = Merchants.TyreAgri.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, Merchants.TyreAgri.NPC, "Merchant")
+                    task.wait(0.8)
+                    firesignal(Remotes.OpenTrade.OnClientEvent, Merchants.TyreAgri.NPC)
+                    task.wait(0.8)
+                    for i = 1, 21 do if not autoTradeActive then break end Remotes.Purchase:InvokeServer(Merchants.TyreAgri.NPC, "Dried Fish") task.wait(0.15) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.DamascusAgri.Coords)
+                if autoTradeActive and LP.Character:FindFirstChild("HumanoidRootPart") then
+                    LP.Character.HumanoidRootPart.CFrame = Merchants.DamascusAgri.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, Merchants.DamascusAgri.NPC, "Merchant")
+                    task.wait(0.8)
+                    Remotes.RequestValue:InvokeServer(Merchants.DamascusAgri.NPC)
+                    task.wait(0.6)
+                    for i = 1, 21 do if not autoTradeActive then break end Remotes.Sell:InvokeServer(Merchants.DamascusAgri.NPC, 1) task.wait(0.15) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                task.wait(1)
+            end
+        end)
+    end,
+})
+
+MainTab:CreateSection("AUTOFARM | DRIED FISH/COPPER")
+MainTab:CreateButton({
+    Name = "MAIN: Tyre -> Damascus",
+    Callback = function()
+         if autoTradeActive then return end
+        autoTradeActive = true
+        task.spawn(function()
+            while autoTradeActive do
+                local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if not root then break end
+                TweenTo(Merchants.TyreAgri.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.TyreAgri.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, Merchants.TyreAgri.NPC, "Merchant")
+                    task.wait(0.7)
+                    firesignal(Remotes.OpenTrade.OnClientEvent, Merchants.TyreAgri.NPC)
+                    task.wait(0.7)
+                    for i = 1, 21 do Remotes.Purchase:InvokeServer(Merchants.TyreAgri.NPC, "Dried Fish") task.wait(0.12) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.DamascusAgri.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.DamascusAgri.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, table.unpack({[1] = Merchants.DamascusAgri.NPC, [2] = "Merchant"}))
+                    task.wait(0.7)
+                    Remotes.RequestValue:InvokeServer(Merchants.DamascusAgri.NPC)
+                    task.wait(0.5)
+                    for i = 1, 21 do Remotes.Sell:InvokeServer(table.unpack({[1] = Merchants.DamascusAgri.NPC, [2] = 1})) task.wait(0.1) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.DamascusBlacksmith.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.DamascusBlacksmith.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, table.unpack({[1] = Merchants.DamascusBlacksmith.NPC, [2] = "Merchant"}))
+                    task.wait(0.7)
+                    firesignal(Remotes.OpenTrade.OnClientEvent, Merchants.DamascusBlacksmith.NPC)
+                    task.wait(0.7)
+                    for i = 1, 21 do 
+                        firesignal(Remotes.DisplayList.OnClientEvent, {[1] = "Purchased: Copper Ingot", [2] = "$10 Discount: Cosmopolitan Foreigner", [3] = "$10 Discount: Fluent in Aramaic", [4] = "Total: -$180"})
+                        Remotes.Purchase:InvokeServer(table.unpack({[1] = Merchants.DamascusBlacksmith.NPC, [2] = "Copper Ingot"})) 
+                        task.wait(0.12) 
+                    end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.TyreMetal.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.TyreMetal.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, table.unpack({[1] = Merchants.TyreMetal.NPC, [2] = "Merchant"}))
+                    task.wait(0.7)
+                    Remotes.RequestValue:InvokeServer(Merchants.TyreMetal.NPC)
+                    task.wait(0.5)
+                    for i = 1, 22 do Remotes.Sell:InvokeServer(table.unpack({[1] = Merchants.TyreMetal.NPC, [2] = 1})) task.wait(0.1) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                task.wait(1)
+            end
+        end)
+    end,
+})
+
+MainTab:CreateButton({
+    Name = "Reverse: Damascus -> Tyre",
+    Callback = function()
+          if autoTradeActive then return end
+        autoTradeActive = true
+        task.spawn(function()
+            while autoTradeActive do
+                local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if not root then break end
+                TweenTo(Merchants.DamascusAgri.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.DamascusAgri.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, table.unpack({[1] = Merchants.DamascusAgri.NPC, [2] = "Merchant"}))
+                    task.wait(0.7)
+                    firesignal(Remotes.OpenTrade.OnClientEvent, Merchants.DamascusAgri.NPC)
+                    task.wait(0.7)
+                    for i = 1, 21 do Remotes.Purchase:InvokeServer(Merchants.DamascusAgri.NPC, "Dried Fish") task.wait(0.12) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.TyreAgri.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.TyreAgri.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, Merchants.TyreAgri.NPC, "Merchant")
+                    task.wait(0.7)
+                    Remotes.RequestValue:InvokeServer(Merchants.TyreAgri.NPC)
+                    task.wait(0.5)
+                    for i = 1, 21 do Remotes.Sell:InvokeServer(table.unpack({[1] = Merchants.TyreAgri.NPC, [2] = 1})) task.wait(0.1) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.DamascusBlacksmith.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.DamascusBlacksmith.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, table.unpack({[1] = Merchants.DamascusBlacksmith.NPC, [2] = "Merchant"}))
+                    task.wait(0.7)
+                    firesignal(Remotes.OpenTrade.OnClientEvent, Merchants.DamascusBlacksmith.NPC)
+                    task.wait(0.7)
+                    for i = 1, 21 do 
+                        firesignal(Remotes.DisplayList.OnClientEvent, {[1] = "Purchased: Copper Ingot", [2] = "$10 Discount: Cosmopolitan Foreigner", [3] = "$10 Discount: Fluent in Aramaic", [4] = "Total: -$180"})
+                        Remotes.Purchase:InvokeServer(table.unpack({[1] = Merchants.DamascusBlacksmith.NPC, [2] = "Copper Ingot"})) 
+                        task.wait(0.12) 
+                    end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                TweenTo(Merchants.TyreMetal.Coords)
+                if autoTradeActive then
+                    root.CFrame = Merchants.TyreMetal.NPC:GetPivot()
+                    firesignal(Remotes.EnterDialogue.OnClientEvent, table.unpack({[1] = Merchants.TyreMetal.NPC, [2] = "Merchant"}))
+                    task.wait(0.7)
+                    Remotes.RequestValue:InvokeServer(Merchants.TyreMetal.NPC)
+                    task.wait(0.5)
+                    for i = 1, 22 do Remotes.Sell:InvokeServer(table.unpack({[1] = Merchants.TyreMetal.NPC, [2] = 1})) task.wait(0.1) end
+                    Remotes.GetGoods:InvokeServer(LP)
+                end
+                task.wait(1)
+            end
+        end)
+    end,
+})
+
+MainTab:CreateButton({
+    Name = "Stop Autofarm",
+    Callback = function()
+        autoTradeActive = false
+        if currentTween then currentTween:Cancel() end
+        isTweening = false
+        Rayfield:Notify({Title = "Stopped", Content = "Autofarm deactivated.", Duration = 3})
+    end,
+})
+
+MainTab:CreateButton({
+    Name = "Stop Everything",
+    Callback = function()
+        autoTradeActive = false
+        isTweening = false
+        tweenWalkActive = false
+        if currentTween then currentTween:Cancel() end
+        ManagePlatform(false)
+        Rayfield:Notify({Title = "Logic Hub", Content = "All actions halted.", Duration = 3})
+    end,
+})
+
+MainTab:CreateSection("FAST TRAVEL")
+MainTab:CreateToggle({
+    Name = "Tween Walk (WASD)",
+    CurrentValue = false,
+    Callback = function(Value) tweenWalkActive = Value end,
+})
+
+MainTab:CreateSection("Travel Speed Settings")
+MainTab:CreateInput({
+    Name = "Enter Speed (Max 250)",
+    PlaceholderText = "220",
+    Callback = function(Text) tempSpeedInput = tonumber(Text) or 220 end,
+})
+
+MainTab:CreateButton({
+    Name = "CONFIRM",
+    Callback = function()
+        tweenSpeed = math.clamp(tempSpeedInput, 1, 250)
+        Rayfield:Notify({Title = "Logic Hub", Content = "Speed set to " .. tostring(tweenSpeed), Duration = 2})
+    end,
+})
+
+-- 6. CITY MARKETS TAB (The separate one)
+MarketTab:CreateSection("Major Cities")
+for _, market in pairs(MarketWaypoints) do
+    MarketTab:CreateButton({
+        Name = market.Name,
+        Callback = function() TweenTo(market.Coords) end,
+    })
+end
+
+-- 7. RESOURCE TPs TAB
+for category, waypoints in pairs(ResourceWaypoints) do
+    TPTab:CreateSection(category)
+    for _, wp in pairs(waypoints) do
+        if wp.Section then
+            TPTab:CreateLabel(wp.Section)
+        else
+            TPTab:CreateButton({
+                Name = wp.Name,
+                Callback = function() TweenTo(wp.Coords) end,
+            })
+        end
+    end
+end
+
+-- 8. EXTERNAL LOOPS
+RunService.RenderStepped:Connect(function()
+    if tweenWalkActive and LP.Character and LP.Character:FindFirstChild("Humanoid") and LP.Character:FindFirstChild("HumanoidRootPart") then
+        local hum = LP.Character.Humanoid
+        local root = LP.Character.HumanoidRootPart
+        if hum.MoveDirection.Magnitude > 0 then
+            root.CFrame = root.CFrame + (hum.MoveDirection * (tweenWalkSpeed / 60))
+            root.AssemblyLinearVelocity = Vector3.zero
+        end
+    end
+end)
